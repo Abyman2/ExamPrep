@@ -47,10 +47,23 @@ if uploaded_files:
             with open(file_path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
             st.sidebar.success(f"✅ Saved: {uploaded_file.name}")
-            # Clear old cached vector index so it rebuilds with new documents included
-            if os.path.exists("faiss_index"):
-                shutil.rmtree("faiss_index")
-            st.cache_resource.clear()
+            # Process newly uploaded files and sync globally
+            if uploaded_files:
+                new_file_added = False
+                for uploaded_file in uploaded_files:
+                    file_path = os.path.join(UPLOAD_DIR, uploaded_file.name)
+                    if not os.path.exists(file_path):
+                        with open(file_path, "wb") as f:
+                            f.write(uploaded_file.getbuffer())
+                        st.sidebar.success(f"✅ Saved to Shared Base: {uploaded_file.name}")
+                        new_file_added = True
+
+                if new_file_added:
+                    # Wipe the shared database index so it forces a global re-scan for everyone
+                    if os.path.exists("faiss_index"):
+                        shutil.rmtree("faiss_index")
+                    st.cache_resource.clear()
+                    st.rerun()
 
 # Reset button if you want to wipe uploaded files clean
 if st.sidebar.button("🗑️ Clear All Uploaded Documents"):
