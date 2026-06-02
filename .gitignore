@@ -1,0 +1,5 @@
+.streamlit/secrets.toml
+faiss_index/
+venv/
+__pycache__/
+.idea/
