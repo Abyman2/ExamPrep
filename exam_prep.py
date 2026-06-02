@@ -337,7 +337,7 @@ Q2: [Next Question Here]
             st.markdown("### 📊 Your Results Breakdown")
             for idx, q in enumerate(st.session_state.quiz_questions):
                 user_ans = st.session_state.saved_answers.get(idx)
-                is_correct = user_ans == q['correct']
+                is_correct = str(user_ans).strip().startswith(q['correct'])
 
                 if is_correct:
                     score += 1
@@ -369,8 +369,9 @@ elif mode == "⚡ Cram Sheet Engine":
 
     if st.button("🚀 Generate Revision Guides"):
         with st.spinner("🤖 Extracting core structures..."):
-            prompt = f"Create a comprehensive, bulleted high-density cram study guide summarizing key concepts, definitions, and rules for these specific subjects: {courses_str}."
-            response = rag_chain.invoke({"input": prompt})
+            cram_prompt = f"Create a comprehensive, bulleted high-density cram study guide summarizing key concepts, definitions, and rules for these specific subjects: {courses_str}."
+            response = rag_chain.invoke({"input": cram_prompt})
+            st.markdown("### 📝 Generated Cram Sheet Guide")
             st.markdown(response["answer"])
 
 elif mode == "🃏 Flashcard Vault":
@@ -380,15 +381,32 @@ elif mode == "🃏 Flashcard Vault":
 
     if st.button("🚀 Build Digital Flashcards"):
         with st.spinner("🤖 Designing modular study flashcards..."):
-            prompt = f"Create 15 concise, highly effective study flashcards covering the active scope: {courses_str}. Separate the cards cleanly by individual course names, focusing strictly on definitions, case rules, or provisions. Use standard Q: and A: presentation blocks."
-            response = rag_chain.invoke({"input": prompt})
+            flash_prompt = f"Create 15 concise, highly effective study flashcards covering the active scope: {courses_str}. Separate the cards cleanly by individual course names, focusing strictly on definitions, case rules, or provisions. Use standard Q: and A: presentation blocks."
+            response = rag_chain.invoke({"input": flash_prompt})
+            st.markdown("### 🃏 Generated Flashcards Vault")
             st.markdown(response["answer"])
 
 elif mode == "📊 Global Blueprint Analyzer":
     st.subheader("📊 Curriculum vs Past Paper Blueprint Matrix")
+    courses_str = ", ".join(selected_courses)
+    st.markdown(
+        "This strategic analyzer cross-references your 17-course exit exam curriculum requirements "
+        "against the legal core concepts inside your vector knowledge base to reveal high-probability "
+        "topics, concept weightings, and key structural trends."
+    )
 
     if st.button("🚀 Run Comprehensive Cross-Match Analysis"):
         with st.spinner("🤖 Mapping curriculum structures to past exam papers..."):
-            prompt = "Analyze all local files in the study database to trace exam weights and distributions. Provide a highly structured report showing: 1. Course & Chapter Blueprint Distribution 2. Historical Question Volumes per topic 3. Document Tracking & explicit file references."
-            response = rag_chain.invoke({"input": prompt})
+            blueprint_prompt = f"""You are an expert academic psychometrician and law exit examination strategist.
+            Analyze the core legal knowledge base context provided to reverse-engineer a comprehensive Exam Blueprint Matrix.
+
+            Please synthesize and display a detailed report containing:
+            1. Core Concept Weight Analysis: Scan the database for topics related to these active courses: {courses_str}. Identify which specific subjects, doctrines, or legal tests have the highest concentration of details or deep explanations.
+            2. High-Probability Question Focus Areas: Outline specific areas (e.g., 'Formation of Contracts' in Contract Law or 'Homicide Elements' in Criminal Law) that are absolutely critical for a final 100-question exit examination.
+            3. Strategic Study Plan Table: Build a Markdown-formatted table mapping out the active subjects, their estimated topic weights (High/Medium/Low based on details density), and crucial statutory sections or case principles students must memorize.
+
+            Ensure the output uses clean Markdown tables, bold headers, and structured bullet points."""
+
+            response = rag_chain.invoke({"input": blueprint_prompt})
+            st.markdown("### 🗺️ Generated Curriculum Blueprint Matrix")
             st.markdown(response["answer"])
