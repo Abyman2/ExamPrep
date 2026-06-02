@@ -277,7 +277,7 @@ Q2: [Next Question Here]
             if not st.session_state.submitted:
                 if st.button("🎯 Submit Answers & Calculate Final Grade"):
                     st.session_state.submitted = True
-                    st.rerun()
+
 
             if st.session_state.submitted:
                 score = 0
