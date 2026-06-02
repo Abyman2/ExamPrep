@@ -362,29 +362,77 @@ Q2: [Next Question Here]
 # =========================================================
 # OTHER MODES
 # =========================================================
+# =========================================================
+# NEW INTERACTIVE CRAM SHEET LOGIC
+# =========================================================
 elif mode == "⚡ Cram Sheet Engine":
-    st.subheader("⚡ High-Density Cram Sheet Generator")
+    st.subheader("⚡ High-Density Interactive Cram Sheet Generator")
     courses_str = ", ".join(selected_courses)
     st.write(f"Targeting Curriculum Area: {courses_str}")
+    st.caption("Click any generated subject heading box below to unfold its high-density revision guides.")
 
     if st.button("🚀 Generate Revision Guides"):
         with st.spinner("🤖 Extracting core structures..."):
-            cram_prompt = f"Create a comprehensive, bulleted high-density cram study guide summarizing key concepts, definitions, and rules for these specific subjects: {courses_str}."
-            response = rag_chain.invoke({"input": cram_prompt})
-            st.markdown("### 📝 Generated Cram Sheet Guide")
-            st.markdown(response["answer"])
+            cram_prompt = f"""Create a comprehensive, bulleted high-density cram study guide summarizing key concepts, definitions, and rules for these specific subjects: {courses_str}.
 
+            CRITICAL FORMATTING RULES:
+            You must split the output using clear Subject tokens so my python code can separate them into clickable components.
+            Use the exact syntax:
+            Subject: [Insert Subject/Course Name here]
+            Notes:
+            - [Bullet point notes, definitions, formulas, elements here]
+            """
+            response = rag_chain.invoke({"input": cram_prompt})
+            raw_text = response["answer"]
+
+            # 🔍 THE STRATEGIC PARSER: Extracts (Subject, Notes) pairs dynamically
+            subjects_data = re.findall(r"Subject:\s*(.*?)\s*Notes:\s*(.*?)(?=Subject:|$)", raw_text, re.DOTALL)
+
+            st.markdown("### 📝 Generated Cram Sheet Guide")
+            if subjects_data:
+                for sub_title, sub_notes in subjects_data:
+                    # 🔄 CLICKABLE DROP-DOWN COMPONENT
+                    with st.expander(f"📚 {sub_title.strip()}"):
+                        st.markdown(sub_notes.strip())
+            else:
+                st.markdown(raw_text)
+
+
+# =========================================================
+# NEW INTERACTIVE FLASHCARD LOGIC
+# =========================================================
 elif mode == "🃏 Flashcard Vault":
-    st.subheader("🃏 Smart Flashcard Vault (Organized by Course)")
+    st.subheader("🃏 Smart Flashcard Vault (Interactive Reveal)")
     courses_str = ", ".join(selected_courses)
     st.write(f"Currently targeting: {courses_str}")
+    st.caption(
+        "Test your legal knowledge! Click on any generated Question Card header to instantly reveal the answer definition.")
 
     if st.button("🚀 Build Digital Flashcards"):
         with st.spinner("🤖 Designing modular study flashcards..."):
-            flash_prompt = f"Create 15 concise, highly effective study flashcards covering the active scope: {courses_str}. Separate the cards cleanly by individual course names, focusing strictly on definitions, case rules, or provisions. Use standard Q: and A: presentation blocks."
+            flash_prompt = f"""Create 15 concise, highly effective law exam flashcards covering the active scope: {courses_str}.
+
+            CRITICAL INTERACTIVE FORMATTING RULES:
+            You must separate every single flashcard cleanly using 'Card:' and 'Answer:' tokens so my UI layout engine can render them inside dropdown components.
+            Use the exact syntax layout:
+            Card: [Insert Question / Concept Definition Prompt here]
+            Answer: [Insert Detailed Answer / Case Law Rule / Provision here]
+            """
             response = rag_chain.invoke({"input": flash_prompt})
+            raw_text = response["answer"]
+
+            # 🔍 THE STRATEGIC PARSER: Splits Question Prompts away from hidden Answer Blocks
+            flash_cards = re.findall(r"Card:\s*(.*?)\s*Answer:\s*(.*?)(?=Card:|$)", raw_text, re.DOTALL)
+
             st.markdown("### 🃏 Generated Flashcards Vault")
-            st.markdown(response["answer"])
+            if flash_cards:
+                for idx, (card_q, card_a) in enumerate(flash_cards):
+                    # 🔄 INTERACTIVE REVEAL WRAPPER
+                    with st.expander(f"❓ Flashcard {idx + 1}: {card_q.strip()}"):
+                        st.info(f"💡 **Correct Rule Definition:**\n{card_a.strip()}")
+            else:
+                st.markdown(raw_text)
+
 
 elif mode == "📊 Global Blueprint Analyzer":
     st.subheader("📊 Curriculum vs Past Paper Blueprint Matrix")
