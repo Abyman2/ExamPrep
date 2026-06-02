@@ -412,39 +412,100 @@ elif mode == "⚡ Cram Sheet Engine":
 
 
 # =========================================================
-# NEW INTERACTIVE FLASHCARD LOGIC
+# 🃏 FLASHCARD VAULT (CONTINUOUS EXAM ROTATION ENGINE)
 # =========================================================
 elif mode == "🃏 Flashcard Vault":
-    st.subheader("🃏 Smart Flashcard Vault (Interactive Reveal)")
+    st.subheader("🃏 Smart Flashcard Vault (Interactive Blueprint Rotation)")
     courses_str = ", ".join(selected_courses)
     st.write(f"Currently targeting: {courses_str}")
-    st.caption(
-        "Test your legal knowledge! Click on any generated Question Card header to instantly reveal the answer definition.")
+    st.caption("Cards are cross-referenced dynamically from your Blueprint requirements and past exam papers.")
 
-    if st.button("🚀 Build Digital Flashcards"):
-        with st.spinner("🤖 Designing modular study flashcards..."):
-            flash_prompt = f"""Create 15 concise, highly effective law exam flashcards covering the active scope: {courses_str}.
+    # 🧠 Initialize state variables so the app remembers your position in the wheel
+    if "flash_deck" not in st.session_state:
+        st.session_state.flash_deck = None
+    if "current_card_index" not in st.session_state:
+        st.session_state.current_card_index = 0
+    if "rotation_completed" not in st.session_state:
+        st.session_state.rotation_completed = False
 
-            CRITICAL INTERACTIVE FORMATTING RULES:
-            You must separate every single flashcard cleanly using 'Card:' and 'Answer:' tokens so my UI layout engine can render them inside dropdown components.
-            Use the exact syntax layout:
-            Card: [Insert Question / Concept Definition Prompt here]
-            Answer: [Insert Detailed Answer / Case Law Rule / Provision here]
+    # Control buttons layout grid
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button("🚀 Compile Fresh Blueprint Deck", use_container_width=True):
+            st.session_state.flash_deck = None
+            st.session_state.current_card_index = 0
+            st.session_state.rotation_completed = False
+
+    # AI Deck Generation Sequence
+    if st.session_state.flash_deck is None:
+        with st.spinner("🤖 Extracting concepts, crossing past papers, and manufacturing cards..."):
+            flash_prompt = f"""You are building an active-recall study system. Generate exactly 17 highly specialized, exhaustive flashcards covering the active scope: {courses_str}.
+
+            CONTENT EXPECTATION:
+            Cross-reference the exam blueprint with past exam paper questions to find heavily tested legal doctrines, multi-part rules, specific statutory articles, and exceptions. Do not ask generic questions; make them highly exam-focused.
+
+            CRITICAL FORMATTING RULES:
+            You must split the cards using clear tokens so the Python code can shuffle them.
+            Use this exact layout structure:
+            Card: [Insert targeted exam question or provision prompt here]
+            Answer: [Insert detailed, comprehensive legal solution, elements, or case precedent here]
             """
             response = rag_chain.invoke({"input": flash_prompt})
             raw_text = response["answer"]
 
-            # 🔍 THE STRATEGIC PARSER: Splits Question Prompts away from hidden Answer Blocks
-            flash_cards = re.findall(r"Card:\s*(.*?)\s*Answer:\s*(.*?)(?=Card:|$)", raw_text, re.DOTALL)
+            # Extract cards safely using RegEx matching
+            parsed_cards = re.findall(r"Card:\s*(.*?)\s*Answer:\s*(.*?)(?=Card:|$)", raw_text, re.DOTALL)
 
-            st.markdown("### 🃏 Generated Flashcards Vault")
-            if flash_cards:
-                for idx, (card_q, card_a) in enumerate(flash_cards):
-                    # 🔄 INTERACTIVE REVEAL WRAPPER
-                    with st.expander(f"❓ Flashcard {idx + 1}: {card_q.strip()}"):
-                        st.info(f"💡 **Correct Rule Definition:**\n{card_a.strip()}")
+            if parsed_cards:
+                st.session_state.flash_deck = parsed_cards
+                st.session_state.current_card_index = 0
+                st.session_state.rotation_completed = False
             else:
-                st.markdown(raw_text)
+                st.session_state.flash_deck = "FALLBACK"
+                st.session_state.fallback_flash_text = raw_text
+
+    # Render Active Deck Interface
+    if st.session_state.flash_deck == "FALLBACK":
+        st.warning("⚠️ Formatting variation detected. Displaying raw sheet mode:")
+        st.write(st.session_state.fallback_flash_text)
+
+    elif st.session_state.flash_deck:
+        deck = st.session_state.flash_deck
+        total_cards = len(deck)
+        current_idx = st.session_state.current_card_index
+
+        # Check if the full circle loop has been executed
+        if st.session_state.rotation_completed:
+            st.success("🎉 **Fully Done Rotation! All core concept areas reviewed.**")
+            if st.button("🔄 Restart Loop & Go Again", use_container_width=True):
+                st.session_state.current_card_index = 0
+                st.session_state.rotation_completed = False
+                st.rerun()
+        else:
+            # Progress Tracking bar visualization
+            st.progress((current_idx + 1) / total_cards)
+            st.markdown(f"📈 **Reviewing Card {current_idx + 1} of {total_cards}**")
+
+            # Clean out any trailing markdown highlights like ** leaked from LLM headings
+            card_q, card_a = deck[current_idx]
+            clean_q = str(card_q).replace("*", "").strip()
+
+            # Display current active flashcard interactive widget
+            with st.container(border=True):
+                st.markdown(f"### ❓ **Question:** {clean_q}")
+                with st.expander("💡 **Click to Reveal Answer**"):
+                    st.info(card_a.strip())
+
+            # Handle cycling index updates seamlessly
+            with col2:
+                if st.button("➡️ Next Flashcard / Rotate Key", use_container_width=True):
+                    if current_idx + 1 < total_cards:
+                        st.session_state.current_card_index += 1
+                        st.rerun()
+                    else:
+                        st.session_state.rotation_completed = True
+                        st.rerun()
 
 
 elif mode == "📊 Global Blueprint Analyzer":
