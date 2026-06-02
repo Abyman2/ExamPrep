@@ -1,6 +1,7 @@
 import os
-import glob
 import re
+import shutil
+import glob
 import streamlit as st
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -21,8 +22,46 @@ st.subheader("Master your 17 curriculum courses and crush the final 100-question
 GROQ_API_KEY = os.getenv("GROQ_API_KEY") or st.secrets.get("GROQ_API_KEY")
 
 if not GROQ_API_KEY:
-    st.error("❌ Missing Groq API Key! Please configure your .streamlit/secrets.toml file.")
+    st.error("❌ Missing Groq API Key! Please configure your secrets panel in Streamlit Advanced Settings.")
     st.stop()
+
+# Ensure local directories exist
+UPLOAD_DIR = "study_material"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# =========================================================
+# 📂 DRAG & DROP FILE UPLOADER WIDGET
+# =========================================================
+st.sidebar.header("📤 Study Material Dropzone")
+uploaded_files = st.sidebar.file_uploader(
+    "Upload new PDFs or Text files for you and your friends:",
+    type=["pdf", "txt"],
+    accept_multiple_files=True
+)
+
+# Process newly uploaded files
+if uploaded_files:
+    for uploaded_file in uploaded_files:
+        file_path = os.path.join(UPLOAD_DIR, uploaded_file.name)
+        if not os.path.exists(file_path):
+            with open(file_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+            st.sidebar.success(f"✅ Saved: {uploaded_file.name}")
+            # Clear old cached vector index so it rebuilds with new documents included
+            if os.path.exists("faiss_index"):
+                shutil.rmtree("faiss_index")
+            st.cache_resource.clear()
+
+# Reset button if you want to wipe uploaded files clean
+if st.sidebar.button("🗑️ Clear All Uploaded Documents"):
+    if os.path.exists(UPLOAD_DIR):
+        shutil.rmtree(UPLOAD_DIR)
+    if os.path.exists("faiss_index"):
+        shutil.rmtree("faiss_index")
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    st.cache_resource.clear()
+    st.sidebar.warning("🧹 Cleared all documents. Upload new ones to begin!")
+    st.rerun()
 
 # =========================================================
 # 📚 CURRICULUM DATA DIRECTORY
@@ -34,7 +73,6 @@ CURRICULUM = {
     "Miscellaneous 💼": ["Employment Law", "Jurisprudence", "Legal Ethics"],
     "Skills 🛠️": ["Criminal Procedure", "Civil Procedure", "Law of Evidence"]
 }
-# Flatten list to easily get a full mix
 ALL_17_COURSES = [course for sublist in CURRICULUM.values() for course in sublist]
 
 
@@ -44,7 +82,7 @@ ALL_17_COURSES = [course for sublist in CURRICULUM.values() for course in sublis
 @st.cache_resource
 def initialize_vector_store():
     documents = []
-    for file_path in glob.glob("study_material/**/*.*", recursive=True):
+    for file_path in glob.glob(f"{UPLOAD_DIR}/**/*.*", recursive=True):
         try:
             if file_path.endswith(".pdf"):
                 loader = PyPDFLoader(file_path)
@@ -58,6 +96,7 @@ def initialize_vector_store():
     if not documents:
         return None
 
+    # Optimized chunking for law materials
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1200, chunk_overlap=200)
     docs = text_splitter.split_documents(documents)
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
@@ -74,8 +113,7 @@ with st.spinner("🧠 Analyzing all 17 course materials & past papers... Standby
     vector_store = initialize_vector_store()
 
 if vector_store is None:
-    st.warning(
-        "📁 Please make sure your PDFs/Texts are dropped inside the 'study_material' folder inside your project directory.")
+    st.info("📁 The knowledge base is currently empty. Use the sidebar drag-and-drop zone to upload your law documents!")
     st.stop()
 
 retriever = vector_store.as_retriever(search_kwargs={"k": 5})
@@ -97,6 +135,7 @@ rag_chain = create_retrieval_chain(retriever, question_answer_chain)
 # =========================================================
 # 🎛️ SIDEBAR NAVIGATION WITH CURRICULUM CHIPS
 # =========================================================
+st.sidebar.markdown("---")
 st.sidebar.header("🎯 Navigation Panel")
 mode = st.sidebar.radio(
     "Select System Mode:",
@@ -106,7 +145,6 @@ mode = st.sidebar.radio(
 st.sidebar.markdown("---")
 st.sidebar.header("📚 Course Selection")
 
-# Dropdown options for targeted study vs mixed simulated exam
 exam_type = st.sidebar.selectbox(
     "Choose Target Scope:",
     ["Simulated Final Exam (Mix of all 17 Courses)", "Targeted Categories / Single Course"]
@@ -132,7 +170,6 @@ if mode == "Interactive Practice Quiz":
 
     num_q = st.slider("Select length of testing blocks:", min_value=5, max_value=30, value=10)
 
-    # Initialize Quiz Session variables so state isn't deleted on button clicks
     if "quiz_questions" not in st.session_state:
         st.session_state.quiz_questions = None
     if "user_answers" not in st.session_state:
@@ -140,13 +177,12 @@ if mode == "Interactive Practice Quiz":
     if "submitted" not in st.session_state:
         st.session_state.submitted = False
 
-    # Force a clean reset button if they want a brand-new test layout
     if st.button("🔄 Generate New Test Paper"):
         st.session_state.quiz_questions = None
         st.session_state.user_answers = {}
         st.session_state.submitted = False
+        st.rerun()
 
-    # Generate questions using the RAG pipeline if not already generated
     if st.session_state.quiz_questions is None:
         courses_str = ", ".join(selected_courses)
         quiz_prompt = f"""
@@ -170,7 +206,6 @@ Q2: [Next Question Here]
             response = rag_chain.invoke({"input": quiz_prompt})
             raw_text = response["answer"]
 
-            # Simple custom parsing logic using regex to separate questions cleanly
             parsed_blocks = re.findall(r"(Q\d+:.*?)(?=Q\d+:|$)", raw_text, re.DOTALL)
 
             questions_data = []
@@ -180,7 +215,7 @@ Q2: [Next Question Here]
                     opts = re.findall(r"([A-D]\).*?)(?=[A-D]\)|Correct Answer:|$)", block, re.DOTALL)
                     options_dict = {}
                     for o in opts:
-                        letter = o[0]
+                        letter = o
                         content = o[2:].strip()
                         options_dict[letter] = f"{letter}) {content}"
 
@@ -194,102 +229,97 @@ Q2: [Next Question Here]
                         "explanation": explanation
                     })
                 except Exception:
-                    continue  # Ignore parsing errors on a broken block safely
+                    continue
 
             if questions_data:
                 st.session_state.quiz_questions = questions_data
             else:
-                # Backup display if raw generation doesn't match standard regex layout perfectly
                 st.session_state.quiz_questions = "FALLBACK"
                 st.session_state.fallback_text = raw_text
 
-    # Render out the Interactive Questions Checkers
-    if st.session_state.quiz_questions == "FALLBACK":
-        st.warning("⚠️ High layout complexity detected. Rendering raw structured sheet version below:")
-        st.write(st.session_state.fallback_text)
-    elif st.session_state.quiz_questions:
-        st.info(f"📋 Running Live Simulated Evaluation across target courses.")
+        if st.session_state.quiz_questions == "FALLBACK":
+            st.warning("⚠️ High layout complexity detected. Rendering raw structured sheet version below:")
+            st.write(st.session_state.fallback_text)
 
-        # Display each question with selection buttons
-        for idx, q in enumerate(st.session_state.quiz_questions):
-            st.markdown(f"#### **Question {idx + 1}:** {q['question']}")
+        elif st.session_state.quiz_questions:
+            st.info(f"📋 Running Live Simulated Evaluation across target courses.")
 
-            options_keys = list(q['options'].keys())
-            options_vals = list(q['options'].values())
-
-            # Find index of already chosen answer if any
-            current_choice = st.session_state.user_answers.get(idx, None)
-            default_idx = options_keys.index(current_choice) if current_choice in options_keys else 0
-
-            user_choice = st.radio(
-                f"Choose option for Q{idx + 1}:",
-                options_keys,
-                format_func=lambda x: q.get('options', {}).get(x, ''),
-                index=default_idx,
-                key=f"q_radio_{idx}"
-            )
-            st.session_state.user_answers[idx] = user_choice
-            st.write("---")
-
-            # Submit Exam Evaluations Action Button
-        if not st.session_state.submitted:
-            if st.button("🎯 Submit Answers & Calculate Final Grade"):
-                st.session_state.submitted = True
-                st.rerun()
-
-            # Display Final Score Card calculations
-        if st.session_state.submitted:
-            score = 0
-            total = len(st.session_state.quiz_questions)
-
-            st.markdown("### 📊 Your Results Breakdown")
             for idx, q in enumerate(st.session_state.quiz_questions):
-                user_ans = st.session_state.user_answers.get(idx)
-                is_correct = user_ans == q['correct']
-                if is_correct:
-                    score += 1
-                    st.success(f"**Question {idx + 1}:** Correct! Your Answer: {user_ans}")
+                st.markdown(f"#### Question {idx + 1}: {q['question']}")
+
+                options_keys = list(q.get('options', {}).keys())
+                current_choice = st.session_state.user_answers.get(idx, None)
+                default_idx = options_keys.index(current_choice) if current_choice in options_keys else 0
+
+                user_choice = st.radio(
+                    f"Choose option for Q{idx + 1}:",
+                    options_keys,
+                    format_func=lambda x: q.get('options', {}).get(x, ''),
+                    index=default_idx,
+                    key=f"q_radio_{idx}"
+                )
+                st.session_state.user_answers[idx] = user_choice
+                st.write("---")
+
+            if not st.session_state.submitted:
+                if st.button("🎯 Submit Answers & Calculate Final Grade"):
+                    st.session_state.submitted = True
+                    st.rerun()
+
+            if st.session_state.submitted:
+                score = 0
+                total = len(st.session_state.quiz_questions)
+
+                st.markdown("### 📊 Your Results Breakdown")
+                for idx, q in enumerate(st.session_state.quiz_questions):
+                    user_ans = st.session_state.user_answers.get(idx)
+                    is_correct = user_ans == q['correct']
+
+                    if is_correct:
+                        score += 1
+                        st.success(f"Question {idx + 1}: Correct! Your Answer: {user_ans}")
+                    else:
+                        st.error(f"Question {idx + 1}: Wrong. Your Answer: {user_ans} | Correct Answer: {q['correct']}")
+                    st.caption(f"💡 Explanation: {q['explanation']}")
+
+                percentage = (score / total) * 100
+                st.metric("🏆 Final Test Score", f"{score} / {total}", f"{percentage:.1f}% Match Rate")
+
+                if percentage >= 70:
+                    st.balloons()
+                    st.success("🔥 Elite status achieved! You and your friends are ready to ace this section!")
                 else:
-                    st.error(f"**Question {idx + 1}:** Wrong. Your Answer: {user_ans} | Correct Answer: {q['correct']}")
-                st.caption(f"💡 *Explanation:* {q['explanation']}")
-
-            percentage = (score / total) * 100
-            st.metric("🏆 Final Test Score", f"{score} / {total}", f"{percentage:.1f}% Match Rate")
-
-            if percentage >= 70:
-                st.balloons()
-                st.success("🔥 Elite status achieved! You and your friends are ready to ace this section!")
-            else:
-                st.warning("📚 Solid attempt! Focus on the text summaries and rerun another simulated block.")
+                    st.warning("📚 Solid attempt! Focus on the text summaries and rerun another simulated block.")
 
         # =========================================================
         # OTHER MODES (CRAM SHEET, FLASHCARDS, ETC.)
         # =========================================================
-        elif mode == "Cram Sheet Engine":
-            st.subheader("⚡ High-Density Cram Sheet Generator")
-            courses_str = ", ".join(selected_courses)
-            st.write(f"Targeting Curriculum Area: `{courses_str}`")
-            if st.button("🚀 Generate Revision Guides"):
-                with st.spinner("🤖 Extracting core structures..."):
-                    prompt = f"Create a comprehensive, bulleted high-density cram study guide summarizing key concepts, definitions, and rules for these specific subjects: {courses_str}."
-                    response = rag_chain.invoke({"input": prompt})
-                    st.markdown(response["answer"])
+    elif mode == "Cram Sheet Engine":
+        st.subheader("⚡ High-Density Cram Sheet Generator")
+        courses_str = ", ".join(selected_courses)
+        st.write(f"Targeting Curriculum Area: {courses_str}")
 
-        elif mode == "Flashcard Vault":
-            st.subheader("🃏 Smart Flashcard Review")
-            courses_str = ", ".join(selected_courses)
-            if st.button("🚀 Build Digital Flashcards"):
-                with st.spinner("🤖 Designing flashcards..."):
-                    prompt = f"Create 15 concise flashcards for the selected modules: {courses_str}. Format clearly with Q: and A: blocks."
-                    response = rag_chain.invoke({"input": prompt})
-                    st.markdown(response["answer"])
+        if st.button("🚀 Generate Revision Guides"):
+            with st.spinner("🤖 Extracting core structures..."):
+                prompt = f"Create a comprehensive, bulleted high-density cram study guide summarizing key concepts, definitions, and rules for these specific subjects: {courses_str}."
+                response = rag_chain.invoke({"input": prompt})
+                st.markdown(response["answer"])
 
-        elif mode == "Global Blueprint Analyzer":
-            st.subheader("📊 Curriculum vs Past Paper Gap Analysis")
-            if st.button("🚀 Run Comprehensive Cross-Match Analysis"):
-                with st.spinner("🤖 Running global analysis across curriculum structure..."):
-                    prompt = "Cross-analyze all local files in the study database. Outline overlapping core definitions, recurring exam questions across years, and classify priority study points."
-                    response = rag_chain.invoke({"input": prompt})
-                    st.markdown(response["answer"])
+    elif mode == "Flashcard Vault":
+        st.subheader("🃏 Smart Flashcard Review")
+        courses_str = ", ".join(selected_courses)
 
+        if st.button("🚀 Build Digital Flashcards"):
+            with st.spinner("🤖 Designing flashcards..."):
+                prompt = f"Create 15 concise flashcards for the selected modules: {courses_str}. Format clearly with Q: and A: blocks."
+                response = rag_chain.invoke({"input": prompt})
+                st.markdown(response["answer"])
 
+    elif mode == "Global Blueprint Analyzer":
+        st.subheader("📊 Curriculum vs Past Paper Gap Analysis")
+
+        if st.button("🚀 Run Comprehensive Cross-Match Analysis"):
+            with st.spinner("🤖 Running global analysis across curriculum structure..."):
+                prompt = "Cross-analyze all local files in the study database. Outline overlapping core definitions, recurring exam questions across years, and classify priority study points."
+                response = rag_chain.invoke({"input": prompt})
+                st.markdown(response["answer"])
