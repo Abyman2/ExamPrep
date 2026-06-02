@@ -183,23 +183,31 @@ if mode == "Interactive Practice Quiz":
     if st.session_state.quiz_questions is None:
         courses_str = ", ".join(selected_courses)
         quiz_prompt = f"""
-Generate an elite {num_q}-question multiple choice exam based on the following scope: {courses_str}.
-Ensure the questions strictly mimic real Law Exit Exam questions.
+    Generate an elite {num_q}-question multiple choice exam based on the following scope: {courses_str}.
+    Ensure the questions strictly mimic real Law Exit Exam questions.
 
-You MUST format the output EXACTLY like the following example format so my parser can process it seamlessly. Do not deviate:
+    CRITICAL INSTRUCTIONS:
+    1. You must track which specific source document or past paper you used to extract this question.
+    2. You must provide a clear, dedicated explanation for EVERY single multiple choice option, outlining why that specific choice is correct or incorrect.
 
-Q1: What is the primary definition of a contract?
-A) An agreement enforceable by law
-B) A casual verbal promise
-C) A social arrangement
-D) A unilateral non-binding declaration
-Correct Answer: A
-Explanation: A contract requires legal intent and mutual enforcement mechanisms under contract law.
+    You MUST format the output EXACTLY like the following example format so my custom parser can read it seamlessly. Do not deviate from this layout structure:
 
-Q2: [Next Question Here]
-...
-"""
-        with st.spinner("🤖 Simulating test parameters and extraction..."):
+    Q1: What is the primary definition of a contract?
+    A) An agreement enforceable by law
+    B) A casual verbal promise
+    C) A social arrangement
+    D) A unilateral non-binding declaration
+    Correct Answer: A
+    Source Citation: [From: Contract Law Module 2024 / Past Exam 2022 Q14]
+    Option A Explanation: (Correct) Under contract law, a contract requires legal intent and mutual enforcement mechanisms.
+    Option B Explanation: (Incorrect) A casual verbal promise lacks legal intent and formal consideration.
+    Option C Explanation: (Incorrect) Social arrangements are generally presumed to lack an intention to create legal relations.
+    Option D Explanation: (Incorrect) A unilateral declaration is missing the necessary element of mutual agreement.
+
+    Q2: [Next Question Here]
+    ...
+    """
+        with st.spinner("🤖 Simulating test parameters, tracking citations, and building options breakdowns..."):
             response = rag_chain.invoke({"input": quiz_prompt})
             raw_text = response["answer"]
 
@@ -212,18 +220,27 @@ Q2: [Next Question Here]
                     opts = re.findall(r"([A-D]\).*?)(?=[A-D]\)|Correct Answer:|$)", block, re.DOTALL)
                     options_dict = {}
                     for o in opts:
-                        letter = o[0]  # Safely parse option keys (A, B, C, D)
+                        letter = o[0]
                         content = o[2:].strip()
                         options_dict[letter] = f"{letter}) {content}"
 
                     correct = re.search(r"Correct Answer:\s*([A-D])", block).group(1).strip()
-                    explanation = re.search(r"Explanation:\s*(.*)", block, re.DOTALL).group(1).strip()
+                    citation = re.search(r"Source Citation:\s*(.*)", block).group(1).strip()
+
+                    # Group all custom options explanations together
+                    exp_block = ""
+                    opt_exps = re.findall(r"(Option [A-D] Explanation:.*)", block)
+                    if opt_exps:
+                        exp_block = "\n".join([f"* {e}" for e in opt_exps])
+                    else:
+                        exp_block = re.search(r"Explanation:\s*(.*)", block, re.DOTALL).group(1).strip()
 
                     questions_data.append({
                         "question": q_text,
                         "options": options_dict,
                         "correct": correct,
-                        "explanation": explanation
+                        "citation": citation,
+                        "explanation": exp_block
                     })
                 except Exception:
                     continue
@@ -275,12 +292,18 @@ Q2: [Next Question Here]
             for idx, q in enumerate(st.session_state.quiz_questions):
                 user_ans = st.session_state.saved_answers.get(idx)
                 is_correct = user_ans == q['correct']
+
                 if is_correct:
                     score += 1
                     st.success(f"**Question {idx + 1}:** Correct! Your Answer: {user_ans}")
                 else:
                     st.error(f"**Question {idx + 1}:** Wrong. Your Answer: {user_ans} | Correct Answer: {q['correct']}")
-                st.caption(f"💡 *Explanation:* {q['explanation']}")
+
+                # Show source citation and option breakdown underneath
+                st.markdown(f"🔖 **NotebookLM Source Reference:** `{q['citation']}`")
+                st.markdown("**🔍 Choices Breakdown Analysis:**")
+                st.markdown(q['explanation'])
+                st.write("---")
 
             percentage = (score / total) * 100
             st.metric("🏆 Final Test Score", f"{score} / {total}", f"{percentage:.1f}% Match Rate")
@@ -304,20 +327,84 @@ Q2: [Next Question Here]
                 response = rag_chain.invoke({"input": prompt})
                 st.markdown(response["answer"])
 
+
     elif mode == "Flashcard Vault":
-        st.subheader("🃏 Smart Flashcard Review")
+
+        st.subheader("🃏 Smart Flashcard Vault (Organized by Course)")
+
         courses_str = ", ".join(selected_courses)
+
+        st.write(f"Currently targeting: `{courses_str}`")
+
         if st.button("🚀 Build Digital Flashcards"):
-            with st.spinner("🤖 Designing flashcards..."):
-                prompt = f"Create 15 concise flashcards for the selected modules: {courses_str}. Format clearly with Q: and A: blocks."
-                response = rag_chain.invoke({"input": prompt})
+            with st.spinner("🤖 Designing modular study flashcards..."):
+                flash_prompt = f"""
+
+    Create 15 concise, highly effective study flashcards covering the active scope: {courses_str}.
+
+
+    REQUIREMENTS:
+
+    1. Separate and group the flashcards cleanly by their individual course names.
+
+    2. Focus strictly on definitions, case rules, statutory provisions, or key operational concepts relevant to law exit exams.
+
+    3. Use a clear question-and-answer presentation layout.
+
+
+    Format exactly like this:
+
+    ### 📚 [Course Name]
+
+    * **Flashcard 1**
+
+      * **Q:** What is the legal definition of [Concept]?
+
+      * **A:** [Answer based on study materials]
+
+    """
+
+                response = rag_chain.invoke({"input": flash_prompt})
+
                 st.markdown(response["answer"])
 
+
+
     elif mode == "Global Blueprint Analyzer":
-        st.subheader("📊 Curriculum vs Past Paper Gap Analysis")
+
+        st.subheader("📊 Curriculum vs Past Paper Blueprint Matrix")
+
+        st.markdown(
+
+            "This analyzer cross-references your 17-course exit exam curriculum outline against all "
+
+            "uploaded past exam documents to reveal exactly where the questions are being extracted from, "
+
+            "historical question volumes per chapter, and weight trends."
+
+        )
+
         if st.button("🚀 Run Comprehensive Cross-Match Analysis"):
-            with st.spinner("🤖 Running global analysis across curriculum structure..."):
-                prompt = "Cross-analyze all local files in the study database. Outline overlapping core definitions, recurring exam questions across years, and classify priority study points."
-                response = rag_chain.invoke({"input": prompt})
+            with st.spinner("🤖 Mapping curriculum structures to past exam papers..."):
+                blueprint_prompt = """
+
+    Analyze all local files in the study database to trace exam weights and distributions.
+
+
+    Please provide a highly structured, data-driven report outlining:
+
+    1. **Course & Chapter Blueprint Distribution**: Grouped by the 17 curriculum subjects, map out which specific chapters or sub-topics appear most frequently in the past papers.
+
+    2. **Question Volumes**: Estimate how many questions traditionally originate from each identified chapter block based on the past exams provided.
+
+    3. **Document Tracking & Source References**: For every major chapter weight trend identified, explicitly cite the specific past exam file names, question numbers, or module files where you found the overlapping concepts.
+
+
+    Format the output clearly using Markdown tables, headers, and bullet points so it reads like a professional analytical report.
+
+    """
+
+                response = rag_chain.invoke({"input": blueprint_prompt})
+
                 st.markdown(response["answer"])
 
