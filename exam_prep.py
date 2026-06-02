@@ -363,39 +363,52 @@ Q2: [Next Question Here]
 # OTHER MODES
 # =========================================================
 # =========================================================
-# NEW INTERACTIVE CRAM SHEET LOGIC
+# ⚡ CRAM SHEET ENGINE (EXHAUSTIVE EXAM BLUEPRINT EDITION)
 # =========================================================
 elif mode == "⚡ Cram Sheet Engine":
     st.subheader("⚡ High-Density Interactive Cram Sheet Generator")
     courses_str = ", ".join(selected_courses)
     st.write(f"Targeting Curriculum Area: {courses_str}")
-    st.caption("Click any generated subject heading box below to unfold its high-density revision guides.")
+    st.caption(
+        "Click any subject heading box below to unfold an exhaustive, deep-dive revision guide mapped to the exam blueprint requirements.")
 
     if st.button("🚀 Generate Revision Guides"):
-        with st.spinner("🤖 Extracting core structures..."):
-            cram_prompt = f"""Create a comprehensive, bulleted high-density cram study guide summarizing key concepts, definitions, and rules for these specific subjects: {courses_str}.
+        with st.spinner("🤖 Deep-scanning materials and extracting all blueprint details..."):
+            cram_prompt = f"""You are an elite legal academic preparing students for a strict Law Exit Examination. 
+            Create a highly comprehensive, deeply detailed, and exhaustive cram study guide for these active subjects: {courses_str}.
+
+            CRITICAL CONTENT REQUIREMENTS:
+            1. DO NOT summarize or simplify. Give deep, exhaustive explanations for every legal concept found in the context.
+            2. For every subject, list ALL important provisions, statutory elements, legal definitions, and case law precedents mentioned across the documents.
+            3. Explicitly break down multi-part legal tests, exceptions to rules, and core elements of liabilities or offenses.
 
             CRITICAL FORMATTING RULES:
-            You must split the output using clear Subject tokens so my python code can separate them into clickable components.
-            Use the exact syntax:
+            You must split the output cleanly using explicit Subject tokens so the layout engine can build clickable drop-downs. Ensure no markdown formatting symbols leak into the titles.
+            Use this exact syntax pattern:
             Subject: [Insert Subject/Course Name here]
             Notes:
-            - [Bullet point notes, definitions, formulas, elements here]
+            - [Insert extremely detailed, comprehensive text guides, rules, statutory sections, and concepts here]
+
+            Ensure you repeat this token pattern block for each course in the list.
             """
             response = rag_chain.invoke({"input": cram_prompt})
             raw_text = response["answer"]
 
-            # 🔍 THE STRATEGIC PARSER: Extracts (Subject, Notes) pairs dynamically
+            # Custom regex string-parser to isolate topics cleanly
             subjects_data = re.findall(r"Subject:\s*(.*?)\s*Notes:\s*(.*?)(?=Subject:|$)", raw_text, re.DOTALL)
 
             st.markdown("### 📝 Generated Cram Sheet Guide")
             if subjects_data:
                 for sub_title, sub_notes in subjects_data:
-                    # 🔄 CLICKABLE DROP-DOWN COMPONENT
-                    with st.expander(f"📚 {sub_title.strip()}"):
+                    # Clean out any accidental markdown leakage from the AI title string
+                    clean_title = str(sub_title).replace("*", "").strip()
+
+                    with st.expander(f"📚 {clean_title}"):
                         st.markdown(sub_notes.strip())
             else:
+                # Safe fallback rendering if the formatting shifts
                 st.markdown(raw_text)
+
 
 
 # =========================================================
