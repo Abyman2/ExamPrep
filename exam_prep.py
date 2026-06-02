@@ -25,7 +25,6 @@ if not GROQ_API_KEY:
     st.error("❌ Missing Groq API Key! Please configure your secrets panel in Streamlit Advanced Settings.")
     st.stop()
 
-# Ensure local directories exist
 UPLOAD_DIR = "study_material"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -39,33 +38,22 @@ uploaded_files = st.sidebar.file_uploader(
     accept_multiple_files=True
 )
 
-# Process newly uploaded files
 if uploaded_files:
+    new_file_added = False
     for uploaded_file in uploaded_files:
         file_path = os.path.join(UPLOAD_DIR, uploaded_file.name)
         if not os.path.exists(file_path):
             with open(file_path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
             st.sidebar.success(f"✅ Saved: {uploaded_file.name}")
-            # Process newly uploaded files and sync globally
-            if uploaded_files:
-                new_file_added = False
-                for uploaded_file in uploaded_files:
-                    file_path = os.path.join(UPLOAD_DIR, uploaded_file.name)
-                    if not os.path.exists(file_path):
-                        with open(file_path, "wb") as f:
-                            f.write(uploaded_file.getbuffer())
-                        st.sidebar.success(f"✅ Saved to Shared Base: {uploaded_file.name}")
-                        new_file_added = True
+            new_file_added = True
 
-                if new_file_added:
-                    # Wipe the shared database index so it forces a global re-scan for everyone
-                    if os.path.exists("faiss_index"):
-                        shutil.rmtree("faiss_index")
-                    st.cache_resource.clear()
-                    st.rerun()
+    if new_file_added:
+        if os.path.exists("faiss_index"):
+            shutil.rmtree("faiss_index")
+        st.cache_resource.clear()
+        st.rerun()
 
-# Reset button if you want to wipe uploaded files clean
 if st.sidebar.button("🗑️ Clear All Uploaded Documents"):
     if os.path.exists(UPLOAD_DIR):
         shutil.rmtree(UPLOAD_DIR)
@@ -73,7 +61,7 @@ if st.sidebar.button("🗑️ Clear All Uploaded Documents"):
         shutil.rmtree("faiss_index")
     os.makedirs(UPLOAD_DIR, exist_ok=True)
     st.cache_resource.clear()
-    st.sidebar.warning("🧹 Cleared all documents. Upload new ones to begin!")
+    st.sidebar.warning("🧹 Cleared all documents!")
     st.rerun()
 
 # =========================================================
@@ -109,7 +97,6 @@ def initialize_vector_store():
     if not documents:
         return None
 
-    # Optimized chunking for law materials
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1200, chunk_overlap=200)
     docs = text_splitter.split_documents(documents)
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
@@ -134,8 +121,7 @@ llm = ChatGroq(groq_api_key=GROQ_API_KEY, model_name="llama-3.1-8b-instant", tem
 
 system_prompt = (
     "You are an elite Law Exit Examination specialist. Use the provided context to build accurate exam questions. "
-    "If the answer cannot be found in the context, synthesize the most legally sound response based on standard legal principles.\n\n"
-    "{context}"
+    "If the answer cannot be found in the context, synthesize the most legally sound response.\n\n{context}"
 )
 prompt_template = ChatPromptTemplate.from_messages([
     ("system", system_prompt),
@@ -146,7 +132,7 @@ question_answer_chain = create_stuff_documents_chain(llm, prompt_template)
 rag_chain = create_retrieval_chain(retriever, question_answer_chain)
 
 # =========================================================
-# 🎛️ SIDEBAR NAVIGATION WITH CURRICULUM CHIPS
+# 🎛️ SIDEBAR NAVIGATION
 # =========================================================
 st.sidebar.markdown("---")
 st.sidebar.header("🎯 Navigation Panel")
@@ -176,23 +162,21 @@ else:
         selected_courses = [specific_course]
 
 # =========================================================
-# 🚀 INTERACTIVE QUIZ ENGINE (WITH REAL-TIME SCORING)
+# 🚀 INTERACTIVE QUIZ ENGINE
 # =========================================================
 if mode == "Interactive Practice Quiz":
     st.subheader("📝 Live Interactive Practice Test")
 
     num_q = st.slider("Select length of testing blocks:", min_value=5, max_value=30, value=10)
 
+    # Initialize Quiz Session variables safely across user interaction refreshes
     if "quiz_questions" not in st.session_state:
         st.session_state.quiz_questions = None
-    if "user_answers" not in st.session_state:
-        st.session_state.user_answers = {}
     if "submitted" not in st.session_state:
         st.session_state.submitted = False
 
     if st.button("🔄 Generate New Test Paper"):
         st.session_state.quiz_questions = None
-        st.session_state.user_answers = {}
         st.session_state.submitted = False
         st.rerun()
 
@@ -228,7 +212,7 @@ Q2: [Next Question Here]
                     opts = re.findall(r"([A-D]\).*?)(?=[A-D]\)|Correct Answer:|$)", block, re.DOTALL)
                     options_dict = {}
                     for o in opts:
-                        letter = o
+                        letter = o[0]  # Safely parse option keys (A, B, C, D)
                         content = o[2:].strip()
                         options_dict[letter] = f"{letter}) {content}"
 
@@ -250,59 +234,62 @@ Q2: [Next Question Here]
                 st.session_state.quiz_questions = "FALLBACK"
                 st.session_state.fallback_text = raw_text
 
-        if st.session_state.quiz_questions == "FALLBACK":
-            st.warning("⚠️ High layout complexity detected. Rendering raw structured sheet version below:")
-            st.write(st.session_state.fallback_text)
+    # Render out the stable Interactive Form Engine
+    if st.session_state.quiz_questions == "FALLBACK":
+        st.warning("⚠️ High layout complexity detected. Rendering raw structured sheet version below:")
+        st.write(st.session_state.fallback_text)
 
-        elif st.session_state.quiz_questions:
-            st.info(f"📋 Running Live Simulated Evaluation across target courses.")
+    elif st.session_state.quiz_questions:
+        st.info(f"📋 Running Live Simulated Evaluation across target courses.")
 
+        # WE PACK ALL QUESTIONS INSIDE A FIXED FORM TO PREVENT INSTANT VANISHING REFRESHEINGS!
+        with st.form(key="quiz_evaluation_form"):
+            temp_answers = {}
             for idx, q in enumerate(st.session_state.quiz_questions):
-                st.markdown(f"#### Question {idx + 1}: {q['question']}")
+                st.markdown(f"#### **Question {idx + 1}:** {q['question']}")
 
                 options_keys = list(q.get('options', {}).keys())
-                current_choice = st.session_state.user_answers.get(idx, None)
-                default_idx = options_keys.index(current_choice) if current_choice in options_keys else 0
 
                 user_choice = st.radio(
                     f"Choose option for Q{idx + 1}:",
                     options_keys,
                     format_func=lambda x: q.get('options', {}).get(x, ''),
-                    index=default_idx,
                     key=f"q_radio_{idx}"
                 )
-                st.session_state.user_answers[idx] = user_choice
+                temp_answers[idx] = user_choice
                 st.write("---")
 
-            if not st.session_state.submitted:
-                if st.button("🎯 Submit Answers & Calculate Final Grade"):
-                    st.session_state.submitted = True
+            # Form actions button
+            submit_clicked = st.form_submit_button("🎯 Submit Answers & Calculate Final Grade")
 
+            if submit_clicked:
+                st.session_state.submitted = True
+                st.session_state.saved_answers = temp_answers
 
-            if st.session_state.submitted:
-                score = 0
-                total = len(st.session_state.quiz_questions)
+        # Outside the form container, show the calculations results breakdown permanently
+        if st.session_state.submitted and "saved_answers" in st.session_state:
+            score = 0
+            total = len(st.session_state.quiz_questions)
 
-                st.markdown("### 📊 Your Results Breakdown")
-                for idx, q in enumerate(st.session_state.quiz_questions):
-                    user_ans = st.session_state.user_answers.get(idx)
-                    is_correct = user_ans == q['correct']
-
-                    if is_correct:
-                        score += 1
-                        st.success(f"Question {idx + 1}: Correct! Your Answer: {user_ans}")
-                    else:
-                        st.error(f"Question {idx + 1}: Wrong. Your Answer: {user_ans} | Correct Answer: {q['correct']}")
-                    st.caption(f"💡 Explanation: {q['explanation']}")
-
-                percentage = (score / total) * 100
-                st.metric("🏆 Final Test Score", f"{score} / {total}", f"{percentage:.1f}% Match Rate")
-
-                if percentage >= 70:
-                    st.balloons()
-                    st.success("🔥 Elite status achieved! You and your friends are ready to ace this section!")
+            st.markdown("### 📊 Your Results Breakdown")
+            for idx, q in enumerate(st.session_state.quiz_questions):
+                user_ans = st.session_state.saved_answers.get(idx)
+                is_correct = user_ans == q['correct']
+                if is_correct:
+                    score += 1
+                    st.success(f"**Question {idx + 1}:** Correct! Your Answer: {user_ans}")
                 else:
-                    st.warning("📚 Solid attempt! Focus on the text summaries and rerun another simulated block.")
+                    st.error(f"**Question {idx + 1}:** Wrong. Your Answer: {user_ans} | Correct Answer: {q['correct']}")
+                st.caption(f"💡 *Explanation:* {q['explanation']}")
+
+            percentage = (score / total) * 100
+            st.metric("🏆 Final Test Score", f"{score} / {total}", f"{percentage:.1f}% Match Rate")
+
+            if percentage >= 70:
+                st.balloons()
+                st.success("🔥 Elite status achieved! You and your friends are ready to ace this section!")
+            else:
+                st.warning("📚 Solid attempt! Focus on the text summaries and rerun another simulated block.")
 
         # =========================================================
         # OTHER MODES (CRAM SHEET, FLASHCARDS, ETC.)
@@ -310,8 +297,7 @@ Q2: [Next Question Here]
     elif mode == "Cram Sheet Engine":
         st.subheader("⚡ High-Density Cram Sheet Generator")
         courses_str = ", ".join(selected_courses)
-        st.write(f"Targeting Curriculum Area: {courses_str}")
-
+        st.write(f"Targeting Curriculum Area: `{courses_str}`")
         if st.button("🚀 Generate Revision Guides"):
             with st.spinner("🤖 Extracting core structures..."):
                 prompt = f"Create a comprehensive, bulleted high-density cram study guide summarizing key concepts, definitions, and rules for these specific subjects: {courses_str}."
@@ -321,7 +307,6 @@ Q2: [Next Question Here]
     elif mode == "Flashcard Vault":
         st.subheader("🃏 Smart Flashcard Review")
         courses_str = ", ".join(selected_courses)
-
         if st.button("🚀 Build Digital Flashcards"):
             with st.spinner("🤖 Designing flashcards..."):
                 prompt = f"Create 15 concise flashcards for the selected modules: {courses_str}. Format clearly with Q: and A: blocks."
@@ -330,9 +315,9 @@ Q2: [Next Question Here]
 
     elif mode == "Global Blueprint Analyzer":
         st.subheader("📊 Curriculum vs Past Paper Gap Analysis")
-
         if st.button("🚀 Run Comprehensive Cross-Match Analysis"):
             with st.spinner("🤖 Running global analysis across curriculum structure..."):
                 prompt = "Cross-analyze all local files in the study database. Outline overlapping core definitions, recurring exam questions across years, and classify priority study points."
                 response = rag_chain.invoke({"input": prompt})
                 st.markdown(response["answer"])
+
